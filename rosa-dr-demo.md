@@ -39,6 +39,9 @@ export HOSTED_ZONE_ID=<your-hosted-zone-id>
 export CLUSTER_ACM=<acm-hub-cluster-name>
 export OADP_DOMAIN=<your-oadp-domain>          # e.g. mission-control.mobb.cloud
 export ACM_DOMAIN=<your-acm-domain>            # e.g. acm-mission-control.mobb.cloud
+
+export OADP_DOMAIN=${OADP_DOMAIN%/}
+export ACM_DOMAIN=${ACM_DOMAIN%/}
 ```
 
 Derive remaining variables from the cluster names and infrastructure:
@@ -384,24 +387,11 @@ aws ec2 start-instances \
   --region $PRIMARY_REGION
 ```
 
-Wait for the primary cluster to rejoin ACM and for both ArgoCD applications to show `Healthy`. This takes 3-5 minutes:
-
-```bash
-oc login $(rosa describe cluster -c $CLUSTER_ACM -o json | jq -r '.api.url') \
-  --username cluster-admin --password '<password>'
-
-watch -n10 "oc get managedcluster -o custom-columns=\
-'NAME:.metadata.name,AVAILABLE:.status.conditions[?(@.type==\"ManagedClusterConditionAvailable\")].status' && \
-  echo '' && \
-  oc get applications.argoproj.io -n openshift-gitops"
-```
-
 Clean up the OADP restore on the DR cluster (so the next demo starts clean):
 
-```bash
-oc login $(rosa describe cluster -c $DR_CLUSTER_NAME -o json | jq -r '.api.url') \
-  --username cluster-admin --password '<password>'
+** log into the DR cluster **
 
+```bash
 oc delete namespace dr-demo --wait=false
 oc delete pv -l app.kubernetes.io/managed-by=recover-efs-volumes
 ```
