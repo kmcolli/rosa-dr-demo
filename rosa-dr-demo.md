@@ -34,22 +34,21 @@ Run through this checklist 15 minutes before the demo starts.
 ```bash
 export PRIMARY_CLUSTER_NAME=<primary-cluster-name>
 export DR_CLUSTER_NAME=<dr-cluster-name>
-export PRIMARY_REGION=us-east-1
-export DR_REGION=us-west-2
 export AWS_PAGER=""
-export NAMESPACE=acm-demo
 export HOSTED_ZONE_ID=<your-hosted-zone-id>
+export CLUSTER_ACM=<acm-hub-cluster-name>
 export OADP_DOMAIN=<your-oadp-domain>          # e.g. mission-control.mobb.cloud
 export ACM_DOMAIN=<your-acm-domain>            # e.g. acm-mission-control.mobb.cloud
 ```
 
-Derive remaining variables from the infrastructure that was created during setup:
+Derive remaining variables from the cluster names and infrastructure:
 
 ```bash
+export PRIMARY_REGION=$(rosa describe cluster -c $PRIMARY_CLUSTER_NAME -o json | jq -r '.region.id')
+export DR_REGION=$(rosa describe cluster -c $DR_CLUSTER_NAME -o json | jq -r '.region.id')
+
 export APP_BUCKET_PRIMARY=${PRIMARY_CLUSTER_NAME}-app-data
 export APP_BUCKET_DR=${DR_CLUSTER_NAME}-app-data
-export OADP_BUCKET_PRIMARY=${PRIMARY_CLUSTER_NAME}-oadp-backups
-export OADP_BUCKET_DR=${DR_CLUSTER_NAME}-oadp-backups
 
 export APP_S3_ROLE_ARN_DR=$(aws iam get-role \
   --role-name ${DR_CLUSTER_NAME}-dr-demo-s3 \
@@ -65,6 +64,8 @@ export DR_EFS=$(aws efs describe-file-systems \
   --query "FileSystems[?Name!=\`null\` && ends_with(Name, '-dr-efs')].FileSystemId | [0]" \
   --output text)
 
+echo "PRIMARY_REGION=$PRIMARY_REGION"
+echo "DR_REGION=$DR_REGION"
 echo "APP_BUCKET_PRIMARY=$APP_BUCKET_PRIMARY"
 echo "APP_BUCKET_DR=$APP_BUCKET_DR"
 echo "APP_S3_ROLE_ARN_DR=$APP_S3_ROLE_ARN_DR"
@@ -380,7 +381,8 @@ aws ec2 start-instances \
 Wait for the primary cluster to rejoin ACM and for both ArgoCD applications to show `Healthy`. This takes 3-5 minutes:
 
 ```bash
-oc login <acm-hub-url> --username cluster-admin --password '<password>'
+oc login $(rosa describe cluster -c $CLUSTER_ACM -o json | jq -r '.api.url') \
+  --username cluster-admin --password '<password>'
 
 watch -n10 "oc get managedcluster -o custom-columns=\
 'NAME:.metadata.name,AVAILABLE:.status.conditions[?(@.type==\"ManagedClusterConditionAvailable\")].status' && \
@@ -391,7 +393,8 @@ watch -n10 "oc get managedcluster -o custom-columns=\
 Clean up the OADP restore on the DR cluster (so the next demo starts clean):
 
 ```bash
-oc login <dr-cluster-url> --username cluster-admin --password '<password>'
+oc login $(rosa describe cluster -c $DR_CLUSTER_NAME -o json | jq -r '.api.url') \
+  --username cluster-admin --password '<password>'
 
 oc delete namespace dr-demo --wait=false
 oc delete pv -l app.kubernetes.io/managed-by=recover-efs-volumes
@@ -436,7 +439,8 @@ aws route53 change-resource-record-sets \
 Log into the primary cluster and redeploy the OADP app:
 
 ```bash
-oc login <primary-cluster-url> --username cluster-admin --password '<password>'
+oc login $(rosa describe cluster -c $PRIMARY_CLUSTER_NAME -o json | jq -r '.api.url') \
+  --username cluster-admin --password '<password>'
 ./scripts/deploy-phoenix.sh
 ```
 
