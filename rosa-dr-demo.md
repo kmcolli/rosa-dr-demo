@@ -1,9 +1,9 @@
-# ROSA HCP Disaster Recovery Demo: OADP vs ACM Side-by-Side
+# ROSA HCP Disaster Recovery Demo: OADP and ACM Patterns
 
 **Authors:** Kevin Collins, Diana Sari, Kumudu Herath
 **Validated on:** OpenShift 4.22
 
-This guide provides a scripted demo that compares two ROSA HCP disaster recovery patterns in a single failure event. One simulated region outage runs both recovery paths simultaneously so the audience sees the contrast in real time:
+This guide provides a scripted demo that walks through two ROSA HCP disaster recovery patterns in a single failure event. One simulated region outage exercises both recovery paths so the audience sees each approach in action:
 
 - **OADP (backup and restore):** manual EFS volume recovery, Velero restore, DNS switch. Recovery takes approximately 5 minutes.
 - **ACM with OpenShift GitOps (deploy to both):** application already running on the DR cluster. DNS switch only. Recovery takes approximately 90 seconds.
@@ -322,9 +322,9 @@ echo "OADP app recovered: $(date +%H:%M:%S)"
 
 Refresh the OADP app browser tab to show it serving from the DR cluster.
 
-### Act 5: Side-by-Side Comparison (1 minute)
+### Act 5: Recovery Summary (1 minute)
 
-> **Talking point:** "Both apps are now running from us-west-2. Let's compare recovery times."
+> **Talking point:** "Both apps are now running from us-west-2. Let's review how each pattern recovered."
 
 | | OADP | ACM |
 |---|---|---|
