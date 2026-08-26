@@ -106,17 +106,6 @@ oc get backup $BACKUP_NAME -n openshift-adp \
   -o jsonpath='Phase: {.status.phase}'
 ```
 
-Generate the EFS PVC mapping from the primary cluster:
-
-```bash
-./scripts/record-efs-mapping.sh \
-  --namespace dr-demo \
-  --region $PRIMARY_REGION \
-  --output efs-pvc-map.csv
-
-cat efs-pvc-map.csv
-```
-
 Verify EFS replication is active:
 
 ```bash
@@ -273,6 +262,39 @@ Refresh the ACM app browser tab to show it serving from the DR cluster.
 ### Act 4: OADP Recovers (5 minutes)
 
 > **Talking point:** "The OADP app is still down. It runs on the primary cluster only, so we need to restore it from backup. Let me walk you through the manual recovery."
+
+Take a fresh OADP backup and record the EFS PVC mapping while the primary cluster API is still reachable:
+
+```bash
+./scripts/record-efs-mapping.sh \
+  --namespace dr-demo \
+  --region "$PRIMARY_REGION" \
+  --output efs-pvc-map.csv
+
+cat efs-pvc-map.csv
+
+export BACKUP_NAME="dr-demo-$(date +%Y%m%d-%H%M)"
+cat <<EOF | oc apply -f -
+apiVersion: velero.io/v1
+kind: Backup
+metadata:
+  name: ${BACKUP_NAME}
+  namespace: openshift-adp
+spec:
+  includedNamespaces:
+    - dr-demo
+  excludedResources:
+    - pods
+    - replicasets.apps
+    - persistentvolumes
+    - persistentvolumeclaims
+  storageLocation: dr-demo-dpa-1
+  defaultVolumesToFsBackup: false
+  snapshotVolumes: false
+EOF
+
+./scripts/create-dr-backup.sh
+```
 
 Log into the DR cluster:
 
@@ -438,37 +460,6 @@ Log into the primary cluster and redeploy the OADP app:
 oc login $(rosa describe cluster -c $PRIMARY_CLUSTER_NAME -o json | jq -r '.api.url') \
   --username cluster-admin --password '<password>'
 ./scripts/deploy-phoenix.sh
-```
-
-Take a fresh OADP backup and re-record the EFS mapping:
-
-```bash
-./scripts/record-efs-mapping.sh \
-  --namespace dr-demo \
-  --region "$PRIMARY_REGION" \
-  --output efs-pvc-map.csv
-
-export BACKUP_NAME="dr-demo-$(date +%Y%m%d-%H%M)"
-cat <<EOF | oc apply -f -
-apiVersion: velero.io/v1
-kind: Backup
-metadata:
-  name: ${BACKUP_NAME}
-  namespace: openshift-adp
-spec:
-  includedNamespaces:
-    - dr-demo
-  excludedResources:
-    - pods
-    - replicasets.apps
-    - persistentvolumes
-    - persistentvolumeclaims
-  storageLocation: dr-demo-dpa-1
-  defaultVolumesToFsBackup: false
-  snapshotVolumes: false
-EOF
-
-./scripts/create-dr-backup.sh
 ```
 
 Verify both apps are accessible:
