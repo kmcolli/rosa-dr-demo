@@ -25,27 +25,16 @@ if [ -z "$REPO_ROOT" ]; then
   REPO_ROOT=$(CDPATH= cd -- "$SCRIPT_DIR/../../../.." && pwd)
 fi
 
-if [ -z "${TF_VAR_admin_password:-}" ] && [ -f "${REPO_ROOT}/.env.fallback" ]; then
-  source "${REPO_ROOT}/.env.fallback"
-fi
-
 : "${DR_CLUSTER_NAME:?}"
 : "${DR_REGION:?}"
 : "${DR_EFS:?}"
 : "${EFS_MAPPING_FILE:?}"
-: "${TF_VAR_admin_password:?Source .env.fallback from the repository root before running this script.}"
 
 export AWS_PAGER=""
 
 [ -f "$EFS_MAPPING_FILE" ] || { echo "Mapping file not found: $EFS_MAPPING_FILE" >&2; exit 1; }
 
-login_cluster() {
-  local cluster_name="$1"
-  local api
-  api=$(rosa describe cluster -c "$cluster_name" -o json | jq -r '.api.url')
-  oc login "$api" --username admin --password "$TF_VAR_admin_password" >/dev/null
-  oc get nodes >/dev/null
-}
+oc whoami >/dev/null 2>&1 || { echo "Not logged into an OpenShift cluster. Log into the DR cluster first." >&2; exit 1; }
 
 wait_access_point_available() {
   local access_point_id="$1"
@@ -66,7 +55,6 @@ wait_access_point_available() {
 }
 
 echo "Reconstructing DR EFS access points and static PVCs on ${DR_CLUSTER_NAME}."
-login_cluster "$DR_CLUSTER_NAME"
 
 oc create namespace dr-demo --dry-run=client -o yaml | oc apply -f -
 
