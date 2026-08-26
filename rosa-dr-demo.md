@@ -186,7 +186,7 @@ for MP in $(rosa list machinepools -c $PRIMARY_CLUSTER_NAME -o json | jq -r '.[]
 done
 
 PRIMARY_INSTANCE_IDS=($(aws ec2 describe-instances --region ${PRIMARY_REGION} \
-  --filters "Name=tag:Name,Values=*${PRIMARY_CLUSTER_NAME}*worker*" \
+  --filters "Name=tag:api.openshift.com/name,Values=${PRIMARY_CLUSTER_NAME}" \
             "Name=instance-state-name,Values=running" \
   --query 'Reservations[*].Instances[*].InstanceId' --output text))
 
@@ -368,7 +368,7 @@ Start the primary workers:
 
 ```bash
 PRIMARY_INSTANCE_IDS=($(aws ec2 describe-instances --region ${PRIMARY_REGION} \
-  --filters "Name=tag:Name,Values=*${PRIMARY_CLUSTER_NAME}*worker*" \
+  --filters "Name=tag:api.openshift.com/name,Values=${PRIMARY_CLUSTER_NAME}" \
             "Name=instance-state-name,Values=stopped" \
   --query 'Reservations[*].Instances[*].InstanceId' --output text))
 
