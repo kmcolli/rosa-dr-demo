@@ -43,12 +43,34 @@ export OADP_DOMAIN=<your-oadp-domain>          # e.g. mission-control.mobb.cloud
 export ACM_DOMAIN=<your-acm-domain>            # e.g. acm-mission-control.mobb.cloud
 ```
 
-Derive remaining variables from the infrastructure scripts:
+Derive remaining variables from the infrastructure that was created during setup:
 
 ```bash
-eval "$(./scripts/configure-s3-replication.sh --dry-run 2>/dev/null)" || true
-export PRIMARY_EFS=<your-primary-efs-id>
-export DR_EFS=<your-dr-efs-id>
+export APP_BUCKET_PRIMARY=${PRIMARY_CLUSTER_NAME}-app-data
+export APP_BUCKET_DR=${DR_CLUSTER_NAME}-app-data
+export OADP_BUCKET_PRIMARY=${PRIMARY_CLUSTER_NAME}-oadp-backups
+export OADP_BUCKET_DR=${DR_CLUSTER_NAME}-oadp-backups
+
+export APP_S3_ROLE_ARN_DR=$(aws iam get-role \
+  --role-name ${DR_CLUSTER_NAME}-dr-demo-s3 \
+  --query 'Role.Arn' --output text)
+
+export PRIMARY_EFS=$(aws efs describe-file-systems \
+  --region $PRIMARY_REGION \
+  --query "FileSystems[?Name=='${PRIMARY_CLUSTER_NAME}-dr-efs'].FileSystemId | [0]" \
+  --output text)
+
+export DR_EFS=$(aws efs describe-replication-configurations \
+  --region $PRIMARY_REGION \
+  --file-system-id $PRIMARY_EFS \
+  --query 'Replications[0].Destinations[0].FileSystemId' \
+  --output text)
+
+echo "APP_BUCKET_PRIMARY=$APP_BUCKET_PRIMARY"
+echo "APP_BUCKET_DR=$APP_BUCKET_DR"
+echo "APP_S3_ROLE_ARN_DR=$APP_S3_ROLE_ARN_DR"
+echo "PRIMARY_EFS=$PRIMARY_EFS"
+echo "DR_EFS=$DR_EFS"
 ```
 
 Verify both clusters are healthy, both apps are running, and DNS is pointing to the primary:
