@@ -79,7 +79,12 @@ echo "DR_EFS=$DR_EFS"
 
 Verify both clusters are healthy, both apps are running, and DNS is pointing to the primary:
 
-** log into the acm cluster **
+Log into the ACM hub cluster:
+
+```bash
+oc login $(rosa describe cluster -c $CLUSTER_ACM -o json | jq -r '.api.url') \
+  --username cluster-admin --password '<password>'
+```
 
 ```bash
 echo "=== OADP App ==="
@@ -96,8 +101,12 @@ echo "=== ArgoCD Applications ==="
 oc get applications.argoproj.io -n openshift-gitops
 ```
 
-Verify the OADP backup exists and has replicated to the DR bucket:
-** log into the primary cluster **
+Verify the OADP backup exists and has replicated to the DR bucket. Log into the primary cluster:
+
+```bash
+oc login $(rosa describe cluster -c $PRIMARY_CLUSTER_NAME -o json | jq -r '.api.url') \
+  --username cluster-admin --password '<password>'
+```
 
 ```bash
 BACKUP_NAME=$(oc get backup -n openshift-adp \
@@ -159,9 +168,12 @@ oc get applications.argoproj.io -n openshift-gitops
 
 > **Talking point:** "Before we simulate the failure, let me show you the OADP backup process. In production, this would run on a schedule. Here we'll take a fresh backup and record the EFS volume mapping."
 
-Record the EFS PVC mapping and take a fresh Velero backup while the primary cluster is healthy:
+Log into the primary cluster and record the EFS PVC mapping and take a fresh Velero backup:
 
 ```bash
+oc login $(rosa describe cluster -c $PRIMARY_CLUSTER_NAME -o json | jq -r '.api.url') \
+  --username cluster-admin --password '<password>'
+
 ./scripts/record-efs-mapping.sh \
   --namespace dr-demo \
   --region "$PRIMARY_REGION" \
@@ -416,11 +428,24 @@ aws ec2 start-instances \
   --region $PRIMARY_REGION
 ```
 
-Clean up the OADP restore on the DR cluster (so the next demo starts clean):
-
-** log into the DR cluster **
+Wait for the primary cluster to rejoin ACM. Log into the ACM hub and watch until both clusters show `Available: True`. This takes 3-5 minutes:
 
 ```bash
+oc login $(rosa describe cluster -c $CLUSTER_ACM -o json | jq -r '.api.url') \
+  --username cluster-admin --password '<password>'
+
+watch -n10 "oc get managedcluster -o custom-columns=\
+'NAME:.metadata.name,AVAILABLE:.status.conditions[?(@.type==\"ManagedClusterConditionAvailable\")].status' && \
+  echo '' && \
+  oc get applications.argoproj.io -n openshift-gitops"
+```
+
+Clean up the OADP restore on the DR cluster (so the next demo starts clean):
+
+```bash
+oc login $(rosa describe cluster -c $DR_CLUSTER_NAME -o json | jq -r '.api.url') \
+  --username cluster-admin --password '<password>'
+
 oc delete namespace dr-demo --wait=false
 oc delete pv -l app.kubernetes.io/managed-by=recover-efs-volumes
 ```
@@ -437,6 +462,14 @@ aws efs create-replication-configuration \
   --region $PRIMARY_REGION \
   --source-file-system-id $PRIMARY_EFS \
   --destinations "[{\"Region\": \"${DR_REGION}\", \"FileSystemId\": \"${DR_EFS}\"}]"
+```
+
+Log into the primary cluster and redeploy the OADP app:
+
+```bash
+oc login $(rosa describe cluster -c $PRIMARY_CLUSTER_NAME -o json | jq -r '.api.url') \
+  --username cluster-admin --password '<password>'
+./scripts/deploy-phoenix.sh
 ```
 
 Switch DNS back to the primary:
