@@ -1,0 +1,6 @@
+*.csv
+*.env
+*.pem
+*.key
+*.crt
+.env.*

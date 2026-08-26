@@ -62,9 +62,10 @@ export PRIMARY_EFS=$(aws efs describe-file-systems \
   --query "FileSystems[?Name!=\`null\` && ends_with(Name, '-dr-efs')].FileSystemId | [0]" \
   --output text)
 
-export DR_EFS=$(aws efs describe-file-systems \
-  --region $DR_REGION \
-  --query "FileSystems[?Name!=\`null\` && ends_with(Name, '-dr-efs')].FileSystemId | [0]" \
+export DR_EFS=$(aws efs describe-replication-configurations \
+  --region $PRIMARY_REGION \
+  --file-system-id $PRIMARY_EFS \
+  --query 'Replications[0].Destinations[0].FileSystemId' \
   --output text)
 
 echo "PRIMARY_REGION=$PRIMARY_REGION"
