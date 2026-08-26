@@ -41,14 +41,11 @@ export NAMESPACE=acm-demo
 export HOSTED_ZONE_ID=<your-hosted-zone-id>
 export OADP_DOMAIN=<your-oadp-domain>          # e.g. mission-control.mobb.cloud
 export ACM_DOMAIN=<your-acm-domain>            # e.g. acm-mission-control.mobb.cloud
-```
-
-Derive remaining variables from the infrastructure scripts:
-
-```bash
-eval "$(./scripts/configure-s3-replication.sh --dry-run 2>/dev/null)" || true
 export PRIMARY_EFS=<your-primary-efs-id>
 export DR_EFS=<your-dr-efs-id>
+export APP_BUCKET_PRIMARY=<your-primary-s3-bucket>
+export APP_BUCKET_DR=<your-dr-s3-bucket>
+export APP_S3_ROLE_ARN_DR=<your-dr-s3-role-arn>
 ```
 
 Verify both clusters are healthy, both apps are running, and DNS is pointing to the primary:
