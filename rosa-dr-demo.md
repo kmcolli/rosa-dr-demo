@@ -55,16 +55,13 @@ export APP_S3_ROLE_ARN_DR=$(aws iam get-role \
   --role-name ${DR_CLUSTER_NAME}-dr-demo-s3 \
   --query 'Role.Arn' --output text)
 
-export PRIMARY_EFS=$(aws efs describe-file-systems \
-  --region $PRIMARY_REGION \
-  --query "FileSystems[?Name=='${PRIMARY_CLUSTER_NAME}-dr-efs'].FileSystemId | [0]" \
-  --output text)
+aws efs describe-file-systems --region $PRIMARY_REGION \
+  --query 'FileSystems[*].[FileSystemId,Name]' --output table
+export PRIMARY_EFS=<efs-id-from-table-above>
 
-export DR_EFS=$(aws efs describe-replication-configurations \
-  --region $PRIMARY_REGION \
-  --file-system-id $PRIMARY_EFS \
-  --query 'Replications[0].Destinations[0].FileSystemId' \
-  --output text)
+aws efs describe-file-systems --region $DR_REGION \
+  --query 'FileSystems[*].[FileSystemId,Name]' --output table
+export DR_EFS=<efs-id-from-table-above>
 
 echo "APP_BUCKET_PRIMARY=$APP_BUCKET_PRIMARY"
 echo "APP_BUCKET_DR=$APP_BUCKET_DR"
