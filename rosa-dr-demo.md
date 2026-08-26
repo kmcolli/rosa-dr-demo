@@ -91,6 +91,7 @@ oc get applications.argoproj.io -n openshift-gitops
 ```
 
 Verify the OADP backup exists and has replicated to the DR bucket:
+** log into the primary cluster **
 
 ```bash
 BACKUP_NAME=$(oc get backup -n openshift-adp \
@@ -102,9 +103,14 @@ oc get backup $BACKUP_NAME -n openshift-adp \
   -o jsonpath='Phase: {.status.phase}'
 ```
 
-Verify the EFS PVC mapping file exists:
+Generate the EFS PVC mapping from the primary cluster:
 
 ```bash
+./scripts/record-efs-mapping.sh \
+  --namespace dr-demo \
+  --region $PRIMARY_REGION \
+  --output efs-pvc-map.csv
+
 cat efs-pvc-map.csv
 ```
 
@@ -448,8 +454,8 @@ Take a fresh OADP backup and re-record the EFS mapping:
 
 ```bash
 ./scripts/record-efs-mapping.sh \
-  --cluster "$PRIMARY_CLUSTER_NAME" \
   --namespace dr-demo \
+  --region "$PRIMARY_REGION" \
   --output efs-pvc-map.csv
 
 export BACKUP_NAME="dr-demo-$(date +%Y%m%d-%H%M)"
