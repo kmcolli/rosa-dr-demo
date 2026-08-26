@@ -78,6 +78,8 @@ echo "DR_EFS=$DR_EFS"
 
 Verify both clusters are healthy, both apps are running, and DNS is pointing to the primary:
 
+** log into the acm cluster **
+
 ```bash
 echo "=== OADP App ==="
 curl -sk https://${OADP_DOMAIN}/healthz
@@ -152,7 +154,44 @@ oc get applications.argoproj.io -n openshift-gitops
 
 > **Talking point:** "The OADP app runs on the primary cluster only, with periodic backups. The ACM app runs on both clusters simultaneously via an ArgoCD ApplicationSet. Let's see what happens when the region goes down."
 
-### Act 2: Simulate Region Failure (2 minutes)
+### Act 2: Prepare OADP Backup (2 minutes)
+
+> **Talking point:** "Before we simulate the failure, let me show you the OADP backup process. In production, this would run on a schedule. Here we'll take a fresh backup and record the EFS volume mapping."
+
+Record the EFS PVC mapping and take a fresh Velero backup while the primary cluster is healthy:
+
+```bash
+./scripts/record-efs-mapping.sh \
+  --namespace dr-demo \
+  --region "$PRIMARY_REGION" \
+  --output efs-pvc-map.csv
+
+cat efs-pvc-map.csv
+
+export BACKUP_NAME="dr-demo-$(date +%Y%m%d-%H%M)"
+cat <<EOF | oc apply -f -
+apiVersion: velero.io/v1
+kind: Backup
+metadata:
+  name: ${BACKUP_NAME}
+  namespace: openshift-adp
+spec:
+  includedNamespaces:
+    - dr-demo
+  excludedResources:
+    - pods
+    - replicasets.apps
+    - persistentvolumes
+    - persistentvolumeclaims
+  storageLocation: dr-demo-dpa-1
+  defaultVolumesToFsBackup: false
+  snapshotVolumes: false
+EOF
+
+./scripts/create-dr-backup.sh
+```
+
+### Act 3: Simulate Region Failure (2 minutes)
 
 Write validation data so the audience can verify data survived the failover:
 
@@ -205,7 +244,7 @@ curl -sk --connect-timeout 3 https://${OADP_DOMAIN}/healthz || echo "OADP app: u
 curl -sk --connect-timeout 3 https://${ACM_DOMAIN}/healthz || echo "ACM app: unreachable"
 ```
 
-### Act 3: ACM Detects and Recovers (2 minutes)
+### Act 4: ACM Detects and Recovers (2 minutes)
 
 > **Talking point:** "ACM monitors cluster health via klusterlet heartbeats. With our tuned lease, it detects failure in about 40 seconds."
 
@@ -259,42 +298,9 @@ Refresh the ACM app browser tab to show it serving from the DR cluster.
 
 > **Talking point:** "The ACM app is back. Total recovery time: about 90 seconds. No backup to restore, no volumes to recreate. The app was already running on both clusters."
 
-### Act 4: OADP Recovers (5 minutes)
+### Act 5: OADP Recovers (5 minutes)
 
 > **Talking point:** "The OADP app is still down. It runs on the primary cluster only, so we need to restore it from backup. Let me walk you through the manual recovery."
-
-Take a fresh OADP backup and record the EFS PVC mapping while the primary cluster API is still reachable:
-
-```bash
-./scripts/record-efs-mapping.sh \
-  --namespace dr-demo \
-  --region "$PRIMARY_REGION" \
-  --output efs-pvc-map.csv
-
-cat efs-pvc-map.csv
-
-export BACKUP_NAME="dr-demo-$(date +%Y%m%d-%H%M)"
-cat <<EOF | oc apply -f -
-apiVersion: velero.io/v1
-kind: Backup
-metadata:
-  name: ${BACKUP_NAME}
-  namespace: openshift-adp
-spec:
-  includedNamespaces:
-    - dr-demo
-  excludedResources:
-    - pods
-    - replicasets.apps
-    - persistentvolumes
-    - persistentvolumeclaims
-  storageLocation: dr-demo-dpa-1
-  defaultVolumesToFsBackup: false
-  snapshotVolumes: false
-EOF
-
-./scripts/create-dr-backup.sh
-```
 
 Log into the DR cluster:
 
@@ -375,7 +381,7 @@ echo "OADP app recovered: $(date +%H:%M:%S)"
 
 Refresh the OADP app browser tab to show it serving from the DR cluster.
 
-### Act 5: Recovery Summary (1 minute)
+### Act 6: Recovery Summary (1 minute)
 
 > **Talking point:** "Both apps are now running from us-west-2. Let's review how each pattern recovered."
 
@@ -452,14 +458,6 @@ aws route53 change-resource-record-sets \
       }
     }]
   }"
-```
-
-Log into the primary cluster and redeploy the OADP app:
-
-```bash
-oc login $(rosa describe cluster -c $PRIMARY_CLUSTER_NAME -o json | jq -r '.api.url') \
-  --username cluster-admin --password '<password>'
-./scripts/deploy-phoenix.sh
 ```
 
 Verify both apps are accessible:
