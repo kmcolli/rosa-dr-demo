@@ -475,9 +475,22 @@ for AP_ID in $(aws efs describe-access-points \
 done
 ```
 
-Re-establish EFS replication:
+Re-establish EFS replication. Wait for the previous replication to finish deleting first:
 
 ```bash
+echo "Waiting for previous replication to finish deleting..."
+while true; do
+  STATUS=$(aws efs describe-replication-configurations \
+    --file-system-id $DR_EFS --region $DR_REGION \
+    --query 'Replications[0].Destinations[0].Status' --output text 2>&1)
+  if echo "$STATUS" | grep -q "ReplicationNotFound"; then
+    echo "Previous replication cleared."
+    break
+  fi
+  echo "  Status: $STATUS"
+  sleep 15
+done
+
 aws efs update-file-system-protection \
   --file-system-id $DR_EFS \
   --region $DR_REGION \
