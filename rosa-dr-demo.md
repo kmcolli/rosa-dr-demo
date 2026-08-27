@@ -217,7 +217,7 @@ EOF
 ./scripts/create-dr-backup.sh
 ```
 
-Delete EFS replication now to promote the DR replica to read-write. Starting this early gives it time to complete during the talking points in Act 3:
+Delete EFS replication to promote the DR replica to read-write. This completes asynchronously in the background — no need to wait:
 
 ```bash
 aws efs delete-replication-configuration \
@@ -240,30 +240,6 @@ printf '%s\n' "s3-$VALIDATION_ID" | aws s3 cp - \
   --region "$PRIMARY_REGION"
 
 echo "Validation marker: $VALIDATION_ID"
-```
-
-Verify EFS replication deletion has completed (should be done by now):
-
-```bash
-STATUS=$(aws efs describe-replication-configurations \
-  --file-system-id $DR_EFS --region $DR_REGION \
-  --query 'Replications[0].Destinations[0].Status' --output text 2>&1)
-if echo "$STATUS" | grep -q "ReplicationNotFound"; then
-  echo "EFS replication deleted — DR EFS is read-write."
-else
-  echo "Still deleting ($STATUS) — waiting..."
-  while true; do
-    sleep 10
-    STATUS=$(aws efs describe-replication-configurations \
-      --file-system-id $DR_EFS --region $DR_REGION \
-      --query 'Replications[0].Destinations[0].Status' --output text 2>&1)
-    if echo "$STATUS" | grep -q "ReplicationNotFound"; then
-      echo "EFS replication deleted — DR EFS is read-write."
-      break
-    fi
-    echo "  Status: $STATUS"
-  done
-fi
 ```
 
 Disable auto-repair and stop the primary workers:
