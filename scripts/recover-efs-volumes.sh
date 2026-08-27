@@ -73,26 +73,34 @@ oc create namespace dr-demo --dry-run=client -o yaml | oc apply -f -
     : "${requested_storage:?}"
     : "${access_modes:?}"
 
-    static_pv="dr-${pv}"
+    static_pv="dr-${pvc}"
     access_mode_yaml=$(printf '%s\n' "$access_modes" | tr ';' '\n' | sed 's/^/    - /')
 
-    dr_access_point_id=$(aws efs create-access-point \
+    # Check for an existing access point on this path before creating
+    dr_access_point_id=$(aws efs describe-access-points \
       --file-system-id "$DR_EFS" \
       --region "$DR_REGION" \
-      --client-token "dr-${source_ap_id}" \
-      --posix-user "Uid=${posix_uid},Gid=${posix_gid}" \
-      --root-directory "Path=${efs_path},CreationInfo={OwnerUid=${root_owner_uid},OwnerGid=${root_owner_gid},Permissions=${root_permissions}}" \
-      --tags "Key=Name,Value=dr-${pvc}" "Key=SourceAccessPoint,Value=${source_ap_id}" "Key=SourcePVC,Value=${namespace}/${pvc}" \
-      --query 'AccessPointId' \
-      --output text 2>&1) || true
+      --query "AccessPoints[?RootDirectory.Path=='${efs_path}'].AccessPointId | [0]" \
+      --output text 2>/dev/null)
 
-    if echo "$dr_access_point_id" | grep -q "AccessPointAlreadyExists"; then
-      dr_access_point_id=$(echo "$dr_access_point_id" | grep -oP 'fsap-[a-f0-9]+')
+    if [ -z "$dr_access_point_id" ] || [ "$dr_access_point_id" = "None" ]; then
+      dr_access_point_id=$(aws efs create-access-point \
+        --file-system-id "$DR_EFS" \
+        --region "$DR_REGION" \
+        --posix-user "Uid=${posix_uid},Gid=${posix_gid}" \
+        --root-directory "Path=${efs_path},CreationInfo={OwnerUid=${root_owner_uid},OwnerGid=${root_owner_gid},Permissions=${root_permissions}}" \
+        --tags "Key=Name,Value=dr-${pvc}" "Key=SourceAccessPoint,Value=${source_ap_id}" "Key=SourcePVC,Value=${namespace}/${pvc}" \
+        --query 'AccessPointId' \
+        --output text)
+    else
       echo "Reusing existing access point: ${dr_access_point_id}"
     fi
 
     wait_access_point_available "$dr_access_point_id"
     echo "${pvc} -> ${DR_EFS}::${dr_access_point_id} | path=${efs_path}"
+
+    # Delete any existing PV to avoid Released/stale claimRef issues
+    oc delete pv "${static_pv}" --ignore-not-found=true 2>/dev/null
 
     cat <<EOF | oc apply -f -
 apiVersion: v1

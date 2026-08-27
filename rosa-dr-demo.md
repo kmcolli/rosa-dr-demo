@@ -468,7 +468,8 @@ Delete DR EFS access points created by the recovery script (so the next run star
 ```bash
 for AP_ID in $(aws efs describe-access-points \
   --file-system-id $DR_EFS --region $DR_REGION \
-  --query 'AccessPoints[?Tags[?Key==`SourcePVC`]].AccessPointId' --output text); do
+  --query "AccessPoints[?Tags[?Key==\`Name\` && starts_with(Value, \`dr-\`)]].AccessPointId" \
+  --output text); do
   echo "Deleting access point: $AP_ID"
   aws efs delete-access-point --access-point-id $AP_ID --region $DR_REGION
 done
