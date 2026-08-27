@@ -84,7 +84,12 @@ oc create namespace dr-demo --dry-run=client -o yaml | oc apply -f -
       --root-directory "Path=${efs_path},CreationInfo={OwnerUid=${root_owner_uid},OwnerGid=${root_owner_gid},Permissions=${root_permissions}}" \
       --tags "Key=Name,Value=dr-${pvc}" "Key=SourceAccessPoint,Value=${source_ap_id}" "Key=SourcePVC,Value=${namespace}/${pvc}" \
       --query 'AccessPointId' \
-      --output text)
+      --output text 2>&1) || true
+
+    if echo "$dr_access_point_id" | grep -q "AccessPointAlreadyExists"; then
+      dr_access_point_id=$(echo "$dr_access_point_id" | grep -oP 'fsap-[a-f0-9]+')
+      echo "Reusing existing access point: ${dr_access_point_id}"
+    fi
 
     wait_access_point_available "$dr_access_point_id"
     echo "${pvc} -> ${DR_EFS}::${dr_access_point_id} | path=${efs_path}"
@@ -94,6 +99,8 @@ apiVersion: v1
 kind: PersistentVolume
 metadata:
   name: ${static_pv}
+  labels:
+    app.kubernetes.io/managed-by: recover-efs-volumes
 spec:
   capacity:
     storage: ${requested_storage}

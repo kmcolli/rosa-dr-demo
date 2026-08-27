@@ -62,11 +62,24 @@ export PRIMARY_EFS=$(aws efs describe-file-systems \
   --query "FileSystems[?Name!=\`null\` && ends_with(Name, '-dr-efs')].FileSystemId | [0]" \
   --output text)
 
+# DR_EFS: try replication config first (works when replication is active),
+# fall back to the replica's Name tag (works during/after the demo).
 export DR_EFS=$(aws efs describe-replication-configurations \
   --region $PRIMARY_REGION \
   --file-system-id $PRIMARY_EFS \
   --query 'Replications[0].Destinations[0].FileSystemId' \
-  --output text)
+  --output text 2>/dev/null)
+
+if [ -z "$DR_EFS" ] || [ "$DR_EFS" = "None" ]; then
+  export DR_EFS=$(aws efs describe-file-systems \
+    --region $DR_REGION \
+    --query "FileSystems[?Name=='${PRIMARY_CLUSTER_NAME}-dr-efs-replica'].FileSystemId | [0]" \
+    --output text)
+fi
+
+# Tag the DR replica so the fallback lookup works during reset
+aws efs create-tags --file-system-id $DR_EFS --region $DR_REGION \
+  --tags "Key=Name,Value=${PRIMARY_CLUSTER_NAME}-dr-efs-replica" 2>/dev/null || true
 
 echo "PRIMARY_REGION=$PRIMARY_REGION"
 echo "DR_REGION=$DR_REGION"
@@ -227,6 +240,23 @@ Delete EFS replication to promote the DR replica to read-write. This step must h
 aws efs delete-replication-configuration \
   --source-file-system-id "$PRIMARY_EFS" \
   --region "$PRIMARY_REGION"
+```
+
+Wait for the deletion to complete (the DR EFS stays read-only until this finishes):
+
+```bash
+echo "Waiting for EFS replication deletion to complete..."
+while true; do
+  STATUS=$(aws efs describe-replication-configurations \
+    --file-system-id $DR_EFS --region $DR_REGION \
+    --query 'Replications[0].Destinations[0].Status' --output text 2>&1)
+  if echo "$STATUS" | grep -q "ReplicationNotFound"; then
+    echo "EFS replication deleted — DR EFS is now read-write."
+    break
+  fi
+  echo "  Status: $STATUS"
+  sleep 10
+done
 ```
 
 Disable auto-repair and stop the primary workers:
@@ -448,6 +478,17 @@ oc login $(rosa describe cluster -c $DR_CLUSTER_NAME -o json | jq -r '.api.url')
 
 oc delete namespace dr-demo --wait=false
 oc delete pv -l app.kubernetes.io/managed-by=recover-efs-volumes
+```
+
+Delete DR EFS access points created by the recovery script (so the next run starts clean):
+
+```bash
+for AP_ID in $(aws efs describe-access-points \
+  --file-system-id $DR_EFS --region $DR_REGION \
+  --query 'AccessPoints[?Tags[?Key==`SourcePVC`]].AccessPointId' --output text); do
+  echo "Deleting access point: $AP_ID"
+  aws efs delete-access-point --access-point-id $AP_ID --region $DR_REGION
+done
 ```
 
 Re-establish EFS replication:
